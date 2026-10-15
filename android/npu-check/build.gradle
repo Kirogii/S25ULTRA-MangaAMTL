@@ -1,0 +1,27 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.mangaamtl.npucheck'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.mangaamtl.npucheck'
+        minSdk 35
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-npu-check'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging { jniLibs { useLegacyPackaging true; keepDebugSymbols += ['**/*.so'] } }
+    sourceSets.main.java.srcDir '../shared/src/main/java'
+    sourceSets.main.jniLibs.srcDir '../runtime'
+}
+
+dependencies {
+    implementation('com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0') {
+        exclude group: 'com.qualcomm.qti', module: 'qnn-runtime'
+    }
+}

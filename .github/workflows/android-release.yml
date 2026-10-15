@@ -1,0 +1,44 @@
+name: Android APK
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build APK
+        run: ./gradlew assembleDebug
+      - name: Collect APK and model packs
+        working-directory: .
+        shell: bash
+        run: |
+          mkdir -p release
+          find android/app/build/outputs/apk -type f -name '*.apk' -exec cp {} release/ \;
+          find android -type f \( -iname '*.zip' -o -iname '*.gguf' -o -iname '*.onnx' -o -iname '*.bin' \) -not -path '*/build/*' -exec cp {} release/ \;
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangaAMTL-Android-${{ github.ref_name }}
+          path: release/*
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/*
