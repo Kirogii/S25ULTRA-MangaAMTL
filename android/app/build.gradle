@@ -1,0 +1,90 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+chaquopy {
+    defaultConfig {
+        version '3.10'
+        buildPython providers.gradleProperty('buildPython').orElse('../../.android-tools/python/cpython-3.10.22-windows-x86_64-none/python.exe').get()
+        pip {
+            install 'numpy==1.26.2'
+            install 'opencv-python==4.5.1.48'
+            install 'Pillow==11.0.0'
+            install 'fastapi==0.119.1'
+            install 'pydantic==1.10.22'
+            install 'python-multipart==0.0.22'
+            install 'uvicorn==0.34.3'
+            install 'chrome-lens-py==3.5.3'
+            install 'protobuf==6.33.5'
+        }
+    }
+}
+
+android {
+    buildFeatures { buildConfig true }
+    namespace 'org.mangaamtl.android'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.mangaamtl.android'
+        minSdk 35
+        targetSdk 36
+        versionName providers.gradleProperty('releaseVersion').orElse('1.0.0').get()
+        def versionParts = versionName.split('\\.').collect { it.toInteger() }
+        versionCode versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+        buildConfigField 'boolean', 'BUNDLED_OCR', providers.gradleProperty('bundleOcr').orElse('false').get().toBoolean().toString()
+        buildConfigField 'boolean', 'BUNDLED_INPAINTING', providers.gradleProperty('bundleInpainting').orElse('false').get().toBoolean().toString()
+        buildConfigField 'boolean', 'BUNDLED_TRANSLATION', providers.gradleProperty('bundleTranslation').orElse('false').get().toBoolean().toString()
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets.main {
+        java.srcDir '../shared/src/main/java'
+        assets.srcDir layout.buildDirectory.dir('generated/modelAssets').get().asFile
+        jniLibs.srcDir '../runtime'
+    }
+    packaging { jniLibs { useLegacyPackaging true; keepDebugSymbols += ['**/*.so'] } }
+    androidResources { noCompress += ['onnx', 'data', 'bin'] }
+}
+
+dependencies {
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+    implementation('com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0') {
+        // The bundled QAIRT SDK supplies one consistent QNN/Genie runtime.
+        exclude group: 'com.qualcomm.qti', module: 'qnn-runtime'
+    }
+}
+
+tasks.register('copyDesktopServer', Copy) {
+    from('../..') { include 'app.py', 'jinja.txt' }
+    into('../models/app-bundle')
+}
+tasks.named('preBuild').configure { dependsOn 'copyDesktopServer' }
+
+// Model-free by default; choose each bundled component explicitly.
+def bundleOcr = providers.gradleProperty('bundleOcr').orElse('false').get().toBoolean()
+def bundleInpainting = providers.gradleProperty('bundleInpainting').orElse('false').get().toBoolean()
+def bundleTranslation = providers.gradleProperty('bundleTranslation').orElse('false').get().toBoolean()
+def catalogEntries = new groovy.json.JsonSlurper().parse(file('../models/app-bundle/models/manifest.json'))
+def bundledEntries = catalogEntries.findAll { (it.category == 'ocr' && bundleOcr) || (it.category == 'inpainting' && bundleInpainting) || (it.category == 'translation' && bundleTranslation) }
+tasks.register('prepareModelAssets', Sync) {
+    dependsOn 'copyDesktopServer'
+    from('../models/app-bundle') { exclude 'models/**' }
+    from('../models/app-bundle/models') {
+        into 'models'
+        include 'manifest.json'
+        bundledEntries.each { include it.path }
+    }
+    into layout.buildDirectory.dir('generated/modelAssets')
+    doLast {
+        def modelRoot = destinationDir.toPath().resolve('models')
+        bundledEntries.each { if (!java.nio.file.Files.isRegularFile(modelRoot.resolve(it.path))) throw new GradleException('Missing bundled model: ' + it.path) }
+        modelRoot.toFile().mkdirs()
+        modelRoot.resolve('manifest.json').toFile().text = groovy.json.JsonOutput.toJson(bundledEntries)
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'prepareModelAssets' }

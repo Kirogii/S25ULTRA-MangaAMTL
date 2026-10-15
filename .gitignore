@@ -1,0 +1,16 @@
+.android-tools/
+android/.gradle/
+android/**/build/
+android/local.properties
+android/models/
+android/evidence/
+android/runtime/
+android/dist/
+android/tools/
+**/__pycache__/
+Extension/Extension.zip
+.publish/
+weppy-project-sync/
+models/
+*.keystore
+*.jks

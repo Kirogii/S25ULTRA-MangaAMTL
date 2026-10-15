@@ -1,0 +1,58 @@
+name: Android release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: android-actions/setup-android@v3
+      - name: Restore verified build inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.0.0 --pattern build-inputs.zip --repo "$GITHUB_REPOSITORY"
+          sha256sum --check android/build-inputs.sha256
+          unzip -q build-inputs.zip -d android
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Restore APK signing identity
+        env:
+          APK_KEYSTORE: ${{ secrets.APK_KEYSTORE }}
+        run: |
+          test -n "$APK_KEYSTORE"
+          mkdir -p ~/.android
+          printf '%s' "$APK_KEYSTORE" | base64 --decode > ~/.android/debug.keystore
+      - name: Build and lint APK
+        run: |
+          chmod +x android/gradlew
+          VERSION=1.0.0
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          android/gradlew -p android :app:assembleDebug :app:lintDebug -PbuildPython="$(which python)" -PbundleOcr=true -PreleaseVersion="$VERSION"
+      - name: Package release
+        run: |
+          mkdir release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/S25ULTRA-MangaAMTL.apk
+          cd Extension && zip -r ../release/S25ULTRA-MangaAMTL-Extension.zip . -x '*.zip' '__pycache__/*' && cd ..
+          sha256sum release/* > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: S25ULTRA-MangaAMTL
+          path: release/*
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber

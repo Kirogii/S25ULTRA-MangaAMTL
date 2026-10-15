@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation android:name=".PackChecks" android:targetPackage="org.mangaamtl.android" android:functionalTest="true" />
+    <instrumentation android:name=".SpeedChecks" android:targetPackage="org.mangaamtl.android" android:functionalTest="true" />
+    <instrumentation android:name=".LiveTrackingChecks" android:targetPackage="org.mangaamtl.android" android:functionalTest="true" />
+</manifest>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { width: 650px; padding: 20px; font-family: Arial, sans-serif; background: #14141f; color: #e0e0e0; margin: 0 auto; }
+    h2, h3 { color: #ffffff; }
+    h2 { margin-bottom: 4px; }
+    .card { background: #1e1e2e; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.4); margin-bottom: 20px; border: 1px solid #333; }
+    label { font-weight: bold; color: #aaaaaa; display: block; margin-bottom: 5px; }
+    input[type="text"], input[type="password"], select {
+      width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;
+      border: 1px solid #444; border-radius: 4px; background: #2a2a3c; color: #e0e0e0;
+    }
+    input[type="text"]::placeholder, input[type="password"]::placeholder { color: #777; }
+    button { padding: 10px 15px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0052a3; }
+    button.success { background: #28a745; }
+    button.success:hover { background: #218838; }
+    button.secondary { background: #3a3f4b; border: 1px solid #555; color: #fff; }
+    button.secondary:hover { background: #4a4f5b; }
+    .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    .status { margin-top: 10px; font-size: 14px; color: #28a745; }
+    .error { color: #ff4d4d; }
+    .hint { font-size: 12px; color: #888; margin: -6px 0 12px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 8px; border: 1px solid #383848; text-align: left; font-size: 14px; color: #ccc; }
+    th { background: #14141f; color: #fff; }
+    hr { margin: 20px 0; border: 0; border-top: 1px solid #333; }
+    .subbox { padding: 10px; background: #16161f; border-radius: 4px; border: 1px solid #333; }
+    .font-scroll {
+      display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden;
+      white-space: nowrap; padding-bottom: 4px; margin: 8px 0 6px 0;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .font-scroll::-webkit-scrollbar { display: none; }
+    .font-chip {
+      flex: 0 0 auto; padding: 7px 12px; background: #2a2a3c; color: #ccc;
+      border: 2px solid #555; border-radius: 16px; cursor: pointer;
+      font-size: 12px; white-space: nowrap;
+    }
+    .font-chip:hover { background: #34344a; }
+    .font-chip.active { border-color: #28a745; color: #fff; }
+    .font-loading { font-size: 11px; color: #888; padding: 4px 0; }
+    .font-loading.error { color: #ff4d4d; }
+    .vision-pill { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:bold; margin-left:6px; background:#164d2b; color:#7dffad; border:1px solid #287a47; }
+    .vision-pill.text-only { background:#30303d; color:#aaa; border-color:#555; }
+    .save-all-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: #14141f; padding: 10px 0; margin-bottom: 15px;
+      display: flex; gap: 10px; align-items: center;
+    }
+    .save-all-bar button { width: 100%; padding: 12px; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <h2>Advanced Manga Translator Settings</h2>
+
+  <!-- ★ Unified Save All Settings button -->
+  <div class="save-all-bar">
+    <button id="saveAllBtn" class="success">💾 Save All Settings (Cache)</button>
+  </div>
+
+  <div class="card">
+    <h3>API Server</h3>
+    <label for="optServerUrl">FastAPI Server URL:</label>
+    <input type="text" id="optServerUrl" placeholder="http://localhost:7860">
+    <button id="mtSaveUrlBtn">Save URL</button>
+    <div id="mtUrlStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Pages</h3>
+    <label for="optCombineAmount">Combine Pages (vertical stitch):</label>
+    <div style="display:flex; align-items:center; gap:10px; margin: 8px 0;">
+      <input type="range" id="optCombineAmount" min="1" max="20" step="1" value="1" style="flex:1;">
+      <span id="optCombineAmountVal" style="min-width:24px; text-align:center; font-weight:bold; color:#28a745; font-size:15px;">1</span>
+    </div>
+    <div class="hint">Stitches X pages into one image before sending, Processes X pages at once then uncombines after the pipeline is done and replaces each image</div>
+    <hr>
+    <label for="optContextMode">Context Aware:</label>
+    <select id="optContextMode">
+      <option value="off">Off</option>
+      <option value="on">On</option>
+    </select>
+    <div class="hint" style="color:#d4881e;">
+      ⚠ +1 API request per chapter (~200–600 extra tokens). On preserves names/honorifics (-kun, -chan) and skips SFX overlay, leaving sound-effect art untouched.
+    </div>
+
+    <div id="optContextLevelRow" style="display:none;">
+      <label for="optContextLevel">Context Level:</label>
+      <select id="optContextLevel">
+        <option value="low">Low — context + skip SFX only</option>
+        <option value="high">High — lettering style from the page image (OpenRouter only)</option>
+      </select>
+      <div class="hint" style="color:#d4881e;">
+        ⚠ <strong>High works on OpenRouter only</strong> — it sends the manga page image along with the text, so the model can see how the <em>original</em> lettering was drawn instead of guessing from wording alone. Each line is tagged Bold / Italic / Regular with a stroke weight, and gets its style font. If the source lettering was heavy or had a glow behind it, the overlay is thickened and given a matching blurred halo.<br>
+        <strong>High uses a lot more tokens than Low</strong> — a page image costs roughly 1,000–2,000+ extra input tokens <em>per page</em> on top of the text. On the Local (GGUF) backend High is ignored and falls back to Low.
+      </div>
+      <div id="optContextHighNote" class="hint" style="display:none; color:#ff6b6b;">
+        High needs the OpenRouter translation model. Switch "Translation Model" to OpenRouter to enable it.
+      </div>
+      <button id="optStyleFontsBtn" class="secondary" style="display:none;">Font Settings</button>
+      <div id="optStyleFontsBox" class="subbox" style="display:none; margin-top:10px;">
+        <div class="hint" style="margin:0 0 8px 0;">Pick a font per lettering style. "Main font" uses the Font Family selection below.</div>
+        <label for="optStyleFontBold"><strong>Bold</strong></label>
+        <select id="optStyleFontBold"><option value="">Main font</option></select>
+        <label for="optStyleFontItalic"><em>Italic</em></label>
+        <select id="optStyleFontItalic"><option value="">Main font</option></select>
+        <label for="optStyleFontRegular">Regular</label>
+        <select id="optStyleFontRegular"><option value="">Main font</option></select>
+        <div id="optStyleFontStatus" class="status"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>OCR Engine</h3>
+    <select id="optOcrMode">
+      <option value="hayai">Hayai (Local, Japanese)</option>
+      <option value="glm">GLM (Local, Korean)</option>
+      <option value="lens">Google Lens (Cloud, All)</option>
+      <option value="openai_endpoint">OpenAI Endpoint OCR (Vision)</option>
+      <option value="google_ai">Google AI Studio OCR (All Text)</option>
+      <option value="local_vision">Local (GGUF Vision)</option>
+    </select>
+    <div id="optOpenaiOcrRow" class="subbox" style="display:none;">
+      <label for="optOpenaiOcrEndpoint">OpenAI Endpoint:</label>
+      <input type="text" id="optOpenaiOcrEndpoint" placeholder="https://api.openai.com/v1">
+      <label for="optOpenaiOcrModel">Vision Model ID:</label>
+      <input type="text" id="optOpenaiOcrModel" placeholder="e.g. gpt-4o-mini">
+      <label for="optOpenaiOcrKey">API Key (optional for local endpoints):</label>
+      <input type="password" id="optOpenaiOcrKey" placeholder="sk-...">
+    </div>
+    <div id="optGoogleAiOcrRow" class="subbox" style="display:none;">
+      <label for="optGoogleAiOcrKey">Google AI Studio API Key:</label>
+      <input type="password" id="optGoogleAiOcrKey" placeholder="AIza...">
+      <label for="optGoogleAiOcrModel">Gemini Model:</label>
+      <select id="optGoogleAiOcrModel">
+        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Default)</option>
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite</option>
+        <option value="custom">Custom model ID</option>
+      </select>
+      <input type="text" id="optGoogleAiOcrCustomModel" placeholder="e.g. gemini-2.5-flash" style="display:none;">
+      <label for="optGoogleAiOcrRpm">Maximum Requests Per Minute:</label>
+      <input type="number" id="optGoogleAiOcrRpm" min="1" max="15" value="5">
+      <div class="hint">Default 5 RPM spaces calls 12 seconds apart. This is conservative but Google quotas can vary by account, model, region, and daily usage.</div>
+    </div>
+    <div class="hint">Google Lens supports all languages and requires chrome-lens-py. OpenAI Endpoint OCR performs lettering analysis. Google AI Studio OCR detects every visible manga text region, including dialogue, narration, titles, signs, credits, and SFX.</div>
+    <div id="optOcrStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Translation Model</h3>
+    <select id="optModelType">
+      <option value="local">Local — Samsung NPU</option>
+      <option value="openrouter">OpenRouter</option>
+    </select>
+    <div id="optOpenrouterRow" class="subbox" style="display:none;">
+      <label for="optOpenrouterModel">OpenRouter Model:</label>
+      <input type="text" id="optOpenrouterModel" placeholder="e.g. openai/gpt-4o-mini">
+      <label for="optOpenrouterKey">OpenRouter API Key:</label>
+      <input type="password" id="optOpenrouterKey" placeholder="sk-or-...">
+      <button id="optSetModelBtn" class="secondary">Set Model</button>
+      <div id="optModelTypeStatus" class="status"></div>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-top:10px;">
+        <input type="checkbox" id="optFreeOpenRouter" style="width:auto;">
+        <span>Paid model — skip rate-limit retries (no 429 backoff)</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Font Family</h3>
+    <div id="optFontFamilyScroll" class="font-scroll">
+      <div class="font-loading">Loading fonts…</div>
+    </div>
+    <div id="optFontFamilyStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Inpainting Mode</h3>
+    <select id="optInpaintMode">
+      <option value="blur">Blur (default, soft erasure, no model)</option>
+      <option value="low">Low (faster)</option>
+      <option value="high">High (better quality, bigger model)</option>
+      <option value="none">None (fill with bg color, no model)</option>
+    </select>
+    <div class="hint">Blur uses fast TextPhantom erasure without a model. LaMa uses the phone's NPU. 'None' fills text regions with the detected background color.</div>
+    <div id="optInpaintStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h3>Translation NPU Model</h3>
+    <div class="row">
+      <button id="refreshModelsBtn" class="secondary">Refresh List</button>
+    </div>
+    <table id="modelsTable">
+      <thead>
+        <tr>
+          <th>Repo ID</th>
+          <th>Filename</th>
+          <th>Capability</th>
+          <th>Size (MB)</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="5" style="text-align:center;">Click "Refresh List" to load models...</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <div hidden>
+    <h3>Install Custom Model</h3>
+    <label>Repo ID (e.g. hugging-quants/Llama-3.2-1B-Instruct-GGUF):</label>
+    <input type="text" id="customRepo" placeholder="repo_id">
+    <label>Filename (leave blank to auto-find):</label>
+    <input type="text" id="customFile" placeholder="filename.gguf">
+    <button id="installModelBtn" class="success">Download &amp; Switch</button>
+    </div>
+    <div id="modelStatus" class="status"></div>
+  </div>
+
+  <script src="android.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

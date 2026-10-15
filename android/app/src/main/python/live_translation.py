@@ -1,0 +1,147 @@
+"""Screen text overlays with exact, context-scoped translation reuse."""
+import asyncio
+import base64
+from collections import OrderedDict
+import io
+import re
+import time
+from PIL import Image, ImageDraw
+
+
+class TranslationCache:
+    def __init__(self, limit=512):
+        self.values = OrderedDict()
+        self.limit = limit
+
+    def get(self, key):
+        if key not in self.values:
+            return None
+        self.values.move_to_end(key)
+        return self.values[key]
+
+    def put(self, key, value):
+        self.values[key] = value
+        self.values.move_to_end(key)
+        while len(self.values) > self.limit:
+            self.values.popitem(last=False)
+
+
+def samsung_batch(module, bridge, texts, target):
+    if target != 'en':
+        raise ValueError('Samsung live translation supports English output')
+    results = [''] * len(texts)
+    pending = [(i, text) for i, text in enumerate(texts) if any(c.isalpha() for c in text)]
+    bridge.samsungBeginBatch()
+    try:
+        while pending:
+            group, size = [], 0
+            while pending and size + len(pending[0][1]) + 16 <= 4000:
+                item = pending.pop(0)
+                group.append(item)
+                size += len(item[1]) + 16
+            if not group:
+                raise ValueError('A screen text region exceeds Samsung’s 4000-character limit')
+            if any('<<<' in text or '>>>' in text for _, text in group):
+                raise ValueError('Screen text contains reserved translation markers')
+            joined = '\n\n'.join(f'<<<{i:03d}>>>\n{text}' for i, (_, text) in enumerate(group))
+            output = str(bridge.samsungTranslate(joined))
+            markers = list(re.finditer(r'<<<(\d{3})>>>', output))
+            if len(markers) != len(group) or [int(m[1]) for m in markers] != list(range(len(group))) or output[:markers[0].start()].strip():
+                raise ValueError('Samsung did not preserve screen text identifiers')
+            for i, ((index, source), marker) in enumerate(zip(group, markers)):
+                text = output[marker.end():markers[i+1].start() if i+1 < len(markers) else len(output)].strip()
+                if text == source:
+                    continue
+                translated = module._validated_translation(source, text, target)
+                if not translated:
+                    raise ValueError('Screen translation failed language validation')
+                results[index] = translated
+    finally:
+        bridge.samsungEndBatch()
+    return results
+
+
+def install(module, bridge):
+    cache = TranslationCache()
+    lock = asyncio.Lock()
+
+    @module.app.post('/v1/live')
+    async def translate(image: module.UploadFile = module.File(...),
+                        cache_enabled: bool = module.Form(True),
+                        ocr_lang: str = module.Form('auto'),
+                        target_lang: str = module.Form('en')):
+        async with lock:
+            started = time.perf_counter()
+            payload = await image.read(16_000_001)
+            if len(payload) > 16_000_000:
+                raise module.HTTPException(413, 'Screen image exceeds 16 MB')
+            try:
+                page = Image.open(io.BytesIO(payload))
+                if page.width * page.height > 12_000_000:
+                    raise ValueError('Screen image exceeds 12 megapixels')
+                page = page.convert('RGB')
+                regions = await module.get_ocr_results(page, ocr_lang, live=True)
+                regions = [r for r in regions if str(r.get('text', '')).strip() and r.get('bbox')]
+                texts = [r['text'].strip() for r in regions]
+                samsung = bool(bridge.samsungEnabled())
+                # Full ordered screen context prevents word/subsentence cache collisions.
+                context = (ocr_lang, target_lang, samsung, str(module._current_qwen_path), tuple(texts))
+                translated, misses, hits = [None] * len(texts), [], 0
+                if not cache_enabled:
+                    cache.values.clear()
+                for i, text in enumerate(texts):
+                    value = cache.get((context, i, text)) if cache_enabled else None
+                    if value is None:
+                        misses.append(i)
+                    else:
+                        translated[i] = value
+                        hits += 1
+                if misses:
+                    loop = asyncio.get_running_loop()
+                    # Translate the full screen together even when some entries hit.
+                    # Bypass Samsung's page cache, which intentionally has no context key.
+                    if samsung:
+                        fresh = await loop.run_in_executor(module._llm_executor, samsung_batch, module, bridge, texts, target_lang)
+                    else:
+                        fresh = await loop.run_in_executor(module._llm_executor, module._qwen_translate_batch_uncached,
+                                                           texts, target_lang, ocr_lang)
+                    if len(fresh) != len(texts):
+                        raise ValueError('Screen translations are not aligned with text regions')
+                    for i in misses:
+                        translated[i] = fresh[i]
+                        if cache_enabled:
+                            cache.put((context, i, texts[i]), fresh[i])
+                overlay = Image.new('RGBA', page.size)
+                draw = ImageDraw.Draw(overlay)
+                colors = module.detect_text_colors_batch(module.pil_to_cv2(page), [r['bbox'] for r in regions]) if regions else []
+                for region, text, (foreground, background) in zip(regions, translated, colors):
+                    if not text:
+                        continue
+                    x1, y1, x2, y2 = region['bbox']
+                    size, lines, heights, _, _ = module.fit_font_and_wrap(draw, text, x2-x1, y2-y1,
+                        font_path=str(module._current_font_path), min_size=8, max_size=96)
+                    for box in region.get('bboxes', [region['bbox']]):
+                        draw.rectangle(tuple(box), fill=tuple(background)+(255,))
+                    font = module.get_font(str(module._current_font_path), size)
+                    y = y1 + max(0, ((y2-y1)-sum(heights))/2)
+                    for line, height in zip(lines, heights):
+                        width = draw.textlength(line, font=font)
+                        draw.text((x1+max(0, ((x2-x1)-width)/2), y), line, font=font, fill=tuple(foreground)+(255,))
+                        y += height
+                output = io.BytesIO()
+                overlay.save(output, format='PNG', compress_level=1)
+                items = []
+                for region, text in zip(regions, translated):
+                    if text:
+                        box = [int(v) for v in region['bbox']]
+                        patch = io.BytesIO()
+                        overlay.crop(tuple(box)).save(patch, format='PNG', compress_level=1)
+                        items.append(dict(bbox=box, overlay=base64.b64encode(patch.getvalue()).decode('ascii')))
+                module.logging.info('[Live] %d regions, %d context cache hits, %.3fs', len(regions), hits, time.perf_counter()-started)
+                return dict(overlay=base64.b64encode(output.getvalue()).decode('ascii'),
+                            width=page.width, height=page.height, regions=len(regions),
+                            cache_hits=hits, seconds=time.perf_counter()-started, items=items)
+            except module.HTTPException:
+                raise
+            except Exception as error:
+                raise module.HTTPException(503, str(error))
