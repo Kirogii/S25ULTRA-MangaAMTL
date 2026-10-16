@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from unittest.mock import patch
 from PIL import Image, ImageFont
 import numpy as np
 
@@ -40,7 +41,7 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             detect_text_colors_batch=lambda image, boxes: [((0, 0, 0), (255, 255, 255)) for box in boxes],
             fit_font_and_wrap=fit,
             get_font=lambda path, size: ImageFont.truetype(path, size))
-        live_translation.install(module, types.SimpleNamespace(samsungEnabled=lambda: False))
+        live_translation.install(module, types.SimpleNamespace(samsungEnabled=lambda: state.get('samsung', False)))
         data = io.BytesIO(); Image.new('RGB', (100, 100), 'white').save(data, 'PNG')
         async def read(limit): return data.getvalue()
         image = types.SimpleNamespace(read=read)
@@ -70,6 +71,16 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overlay.mode, 'RGBA')
         self.assertEqual(overlay.getpixel((0, 0))[3], 0)
         self.assertEqual(overlay.getpixel((5, 5))[3], 255)
+        state['samsung'] = True
+        local_calls = len(calls)
+        with patch.object(live_translation, 'samsung_batch', return_value=['Samsung one', 'Samsung two']) as samsung:
+            selected = await run()
+            self.assertEqual(selected['translation_backend'], 'samsung')
+            self.assertEqual(selected['cache_hits'], 0, 'Backend changes must invalidate translation reuse')
+            samsung.assert_called_once()
+        self.assertEqual(len(calls), local_calls, 'Samsung selection must not call Qwen')
+        state['samsung'] = False
+        self.assertEqual((await run())['translation_backend'], 'qwen')
 
     def test_blur_uses_existing_eraser_and_none_is_transparent(self):
         calls = []
