@@ -44,7 +44,8 @@ jobs:
           mkdir release
           cp android/app/build/outputs/apk/debug/app-debug.apk release/S25ULTRA-MangaAMTL.apk
           cd Extension && zip -r ../release/S25ULTRA-MangaAMTL-Extension.zip . -x '*.zip' '__pycache__/*' && cd ..
-          sha256sum release/* > release/SHA256SUMS.txt
+          (cd release && sha256sum S25ULTRA-* > SHA256SUMS.txt)
+          cat android/build-inputs.sha256 >> release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: S25ULTRA-MangaAMTL
