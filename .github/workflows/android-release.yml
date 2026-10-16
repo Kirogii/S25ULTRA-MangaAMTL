@@ -18,6 +18,8 @@ jobs:
         with:
           python-version: '3.10'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Restore verified build inputs
         env:
           GH_TOKEN: ${{ github.token }}
