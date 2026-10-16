@@ -42,8 +42,18 @@ public final class LiveTrackingChecks extends Instrumentation {
                 for _ in range(10):
                     state = json.loads(tracker.track(screen(20).tobytes(), 200, 360))
                     assert fixed in tracker.items
-                report = json.dumps(dict(passed=True, stable_track_ms=(time.perf_counter()-started)*100,
-                    partial_region_visible=True, bottom_bar_fixed=True))
+                stable_ms = (time.perf_counter()-started)*100
+                for offset in range(40, 221, 20):
+                    tracker.track(screen(offset).tobytes(), 200, 360)
+                assert half not in tracker.items
+                restored = []
+                for offset in range(200, -1, -20):
+                    state = json.loads(tracker.track(screen(offset).tobytes(), 200, 360))
+                    restored.extend(item['id'] for item in state['add'])
+                assert half in restored and half in tracker.items
+                assert state['dirty'] is None
+                report = json.dumps(dict(passed=True, stable_track_ms=stable_ms,
+                    partial_region_visible=True, bottom_bar_fixed=True, offscreen_restore_without_ocr=True))
                 """, scope);
             result.putString("result", scope.callAttr("get", "report").toString());
             finish(0, result);

@@ -21,6 +21,89 @@ class Tracker:
         self.pending = None
         self.serial = 0
         self.last_ignore = []
+        self.overlays = {}
+        self.history = []
+        self.orb = cv2.ORB_create(nfeatures=400, edgeThreshold=12, fastThreshold=12)
+
+    def remember(self, cells):
+        if self.previous is None:
+            return
+        points, descriptors = self.orb.detectAndCompute(self.previous, None)
+        self.history.append(dict(image=self.previous.copy(), cells=cells, points=points, descriptors=descriptors,
+            items=[dict(id=k, rect=list(b), clip=list(self.clips[k]), overlay=self.overlays[k])
+                   for k, b in self.items.items() if k in self.overlays]))
+        # Keep screenshots in RAM only, bounded independently of session length.
+        while len(self.history) > 16 or sum(frame['image'].nbytes + sum(len(i['overlay']) for i in frame['items'])
+                                           for frame in self.history) > 16_000_000:
+            self.history.pop(0)
+
+    def restore(self, current, covered, ignored):
+        height, width = current.shape
+        added = []
+        current_points, current_descriptors = self.orb.detectAndCompute(current, None)
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        for frame in reversed(self.history):
+            if frame['image'].shape != current.shape:
+                continue
+            offsets = [(0, 0)]
+            if frame['descriptors'] is not None and current_descriptors is not None:
+                pairs = matcher.knnMatch(frame['descriptors'], current_descriptors, k=2)
+                shifts = [np.array(current_points[a.trainIdx].pt)-np.array(frame['points'][a.queryIdx].pt)
+                          for pair in pairs if len(pair) == 2 for a, b in [pair] if a.distance < .7*b.distance]
+                if shifts:
+                    shifts = np.array(shifts)
+                    while len(shifts) >= 4 and len(offsets) < 4:
+                        buckets = np.round(shifts/4).astype(int)
+                        groups, counts = np.unique(buckets, axis=0, return_counts=True)
+                        center = groups[counts.argmax()]*4
+                        coherent = np.linalg.norm(shifts-center, axis=1) < 5
+                        if coherent.sum() < 4:
+                            break
+                        offset = tuple(np.round(np.median(shifts[coherent], axis=0)).astype(int))
+                        if all(np.linalg.norm(np.array(offset)-old) > 3 for old in offsets):
+                            offsets.append(offset)
+                        shifts = shifts[~coherent]
+            for cell, (sx, sy) in [(cell, offset) for offset in offsets for cell in frame['cells']]:
+                x1, y1, x2, y2 = [int(v*s) for v, s in zip(cell, [width, height, width, height])]
+                x1, y1, x2, y2 = max(0, x1), max(0, y1), min(width, x2), min(height, y2)
+                patch = frame['image'][y1:y2, x1:x2]
+                if min(patch.shape, default=0) < 8:
+                    continue
+                px, py = x1+sx, y1+sy
+                if px < 0 or py < 0 or px+patch.shape[1] > width or py+patch.shape[0] > height:
+                    continue
+                if (cv2.absdiff(patch, current[py:py+patch.shape[0], px:px+patch.shape[1]]) > 20).mean() > .025:
+                    continue
+                destination = [px/width, py/height, (px+patch.shape[1])/width, (py+patch.shape[0])/height]
+                if any(overlap(destination, b) > 0 for b in ignored):
+                    continue
+                if covered[py:py+patch.shape[0], px:px+patch.shape[1]].mean() > .98:
+                    continue
+                dx, dy = (px-x1)/width, (py-y1)/height
+                self.coverage.append(destination)
+                covered[py:py+patch.shape[0], px:px+patch.shape[1]] = 1
+                for item in frame['items']:
+                    key, source = item['id'], item['rect']
+                    if key in self.items or overlap(source, cell) <= 0:
+                        continue
+                    box = [source[0]+dx, source[1]+dy, source[2]+dx, source[3]+dy]
+                    clip = item['clip']
+                    if not visible(box) or overlap(box, clip) <= 0:
+                        continue
+                    # Verify every visible pixel of the text region, not merely
+                    # its anchor tile, before resurrecting a cached translation.
+                    sx, sy = px-x1, py-y1
+                    a, b, c, d = [int(v*s) for v, s in zip(source, [width, height, width, height])]
+                    a, b = max(a, 0, -sx), max(b, 0, -sy, int(clip[1]*height)-sy)
+                    c, d = min(c, width, width-sx), min(d, height, height-sy, int(clip[3]*height)-sy)
+                    if c-a < 3 or d-b < 3:
+                        continue
+                    if (cv2.absdiff(frame['image'][b:d, a:c], current[b+sy:d+sy, a+sx:c+sx]) > 20).mean() > .05:
+                        continue
+                    self.items[key], self.clips[key], self.overlays[key] = box, clip, item['overlay']
+                    added.append(dict(id=key, rect=box, clip=clip, overlay=item['overlay']))
+        self.coverage = self.coverage[-256:]
+        return added
 
     @staticmethod
     def cells(box):
@@ -65,14 +148,16 @@ class Tracker:
             for key, old in list(self.items.items()):
                 area = max(1e-8, (min(1, old[2])-max(0, old[0]))*(min(1, old[3])-max(0, old[1])))
                 if overlap(old, box)/area > .6:
-                    del self.items[key]; self.clips.pop(key, None); removed.append(key)
+                    del self.items[key]; self.clips.pop(key, None); self.overlays.pop(key, None); removed.append(key)
             self.serial += 1
             key = str(self.serial)
             self.items[key] = box
             self.clips[key] = anchor['clip']
+            self.overlays[key] = item['overlay']
             added.append(dict(id=key, rect=box, clip=anchor['clip'], overlay=item['overlay']))
         self.coverage.extend(c['current'] for c in pending['cells'] if c['valid'] and visible(c['current']))
         self.coverage = self.coverage[-256:]
+        self.remember([c['current'] for c in pending['cells'] if c['valid'] and visible(c['current'])])
         return json.dumps(dict(add=added, remove=removed))
 
     def track(self, pixels, width, height, ignore_json='[]'):
@@ -178,7 +263,7 @@ class Tracker:
             destination, dx, dy = move(box, self.clips.get(key))
             clip = panel_clip(box, dx, dy) or self.clips.get(key, [0, 0, 1, 1])
             if not visible(destination) or overlap(destination, clip) <= 0 or changed(box, dx, dy, .22, clip):
-                del self.items[key]; self.clips.pop(key, None); removed.append(key)
+                del self.items[key]; self.clips.pop(key, None); self.overlays.pop(key, None); removed.append(key)
             else:
                 self.items[key] = destination
                 self.clips[key] = clip
@@ -198,6 +283,8 @@ class Tracker:
         covered = np.zeros(current.shape, np.uint8)
         for b in self.coverage:
             covered[max(0, int(b[1]*height)):min(height, int(b[3]*height)), max(0, int(b[0]*width)):min(width, int(b[2]*width))] = 1
+        added = self.restore(current, covered, ignored) if self.history and covered.mean() < .998 else []
+        removed = [key for key in removed if key not in self.items]
         covered = cv2.dilate(covered, np.ones((3, 3), np.uint8))
         for b in ignored:
             covered[max(0, int(b[1]*height)):min(height, int(b[3]*height)), max(0, int(b[0]*width)):min(width, int(b[2]*width))] = 1
@@ -207,6 +294,8 @@ class Tracker:
             candidates = [s for s in stats[1:] if s[4] >= max(24, width*height*.002)]
             if candidates:
                 x, y, w, h, _ = max(candidates, key=lambda s: s[4])
-                # Include a little neighboring text context at newly exposed edges.
-                dirty = [max(0., (x-4)/width), max(0., (y-6)/height), min(1., (x+w+4)/width), min(1., (y+h+6)/height)]
-        return json.dumps(dict(move=[dict(id=k, rect=b, clip=self.clips[k]) for k, b in self.items.items()], remove=removed, dirty=dirty))
+                # Keep complete horizontal text lines and neighboring context;
+                # a thin newly exposed strip can otherwise split a sentence.
+                padding = max(6, height//24)
+                dirty = [0., max(0., (y-padding)/height), 1., min(1., (y+h+padding)/height)]
+        return json.dumps(dict(move=[dict(id=k, rect=b, clip=self.clips[k]) for k, b in self.items.items()], add=added, remove=removed, dirty=dirty))

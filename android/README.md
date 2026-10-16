@@ -1,6 +1,6 @@
 # Android localhost server for Galaxy S25 Ultra
 
-## Live screen translation (0.6)
+## Live screen translation (1.0.0)
 
 Open MangaAMTL and enable **Live screen translation · floating button**. Android opens **Display over other apps**; allow MangaAMTL and return. A draggable **Live** button appears over other apps. Tap it, review the upload disclosure, and approve Android's screen-capture prompt. The requested capture is the whole display. Tap **Stop** to end capture, or use the notification's Stop action to remove the floating controls entirely. Turning the live switch off also removes them.
 
@@ -9,6 +9,8 @@ Live mode reuses the selected Google Lens OCR engine and existing NPU YOLO text 
 **Cache live translations with matching screen context** enables an in-memory, bounded cache. Keys include the complete source text, ordered screen text context, region position in that context, source/target languages and translation model. Extended sentences, changed context and repeated identical words in different regions cannot collide. Disabling caching bypasses and clears this cache on the next processed frame. Samsung's existing page cache is bypassed for live frames. Unchanged frames skip redundant OCR requests; changed frames are processed one at a time, without a growing queue.
 
 In Google Lens mode, captured screen images are sent to Google. Screen capture begins only after Android's consent prompt and stops when the floating Stop button is pressed, Android ends projection, or live mode is disabled. Protected/secure app content may not be capturable. Nothing records screen images to disk.
+
+Recent whole-screen tracking snapshots and translated regions remain in RAM (up to 16 snapshots and approximately 16 MB of image/encoded-overlay data). When you scroll back, feature matches recover each section's position; visible text pixels must also match before an old overlay returns. Offscreen overlays are not drawn. Changed sections require OCR again, with full-width neighboring line context to avoid splitting sentences. This history is discarded when capture ends or resizes. It remembers previously seen content; it cannot capture never-visible content from an arbitrary app.
 
 Android's touch security requires the text overlay to remain translucent (at most the platform's obscuring-opacity limit), so original lettering may faintly show through. The text layer does not consume touches; only the floating control does. Optical flow moves individual translated regions with scrolling, keeps partially visible regions clipped to their panel, and leaves stationary headers and bottom bars independent. Changed or offscreen regions are removed. Newly exposed sections are cropped for OCR while existing translations keep tracking. Captured pixels are reconstructed beneath the translucent overlay so it does not periodically hide for capture. Async OCR results follow their tracked section and are discarded if that section disappears. Google Lens network latency still limits new translations; this is not a 0.20-second or video-rate guarantee.
 

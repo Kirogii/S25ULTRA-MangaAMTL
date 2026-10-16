@@ -76,5 +76,37 @@ class TrackingTests(unittest.TestCase):
         self.assertTrue(visible([.1, -.1, .4, .1]))
         self.assertFalse(visible([.1, -.3, .4, -.1]))
 
+    def test_scroll_back_restores_offscreen_text_without_ocr(self):
+        tracker = Tracker()
+        ids, _ = self.fill(tracker)
+        for scroll in range(20, 221, 20):
+            self.track(tracker, self.screen(scroll))
+        self.assertNotIn(ids[1], tracker.items)
+        restored = []
+        for scroll in range(200, -1, -20):
+            update = self.track(tracker, self.screen(scroll))
+            restored.extend(item['id'] for item in update['add'])
+        self.assertIn(ids[1], restored)
+        self.assertAlmostEqual(tracker.items[ids[1]][1], 140/360, delta=.015)
+        self.assertIsNone(update['dirty'], 'Previously captured screen should not require OCR again')
+
+    def test_changed_text_is_not_restored_from_neighboring_tile(self):
+        tracker = Tracker()
+        ids, _ = self.fill(tracker)
+        for scroll in range(20, 221, 20):
+            self.track(tracker, self.screen(scroll))
+        changed = self.screen().copy()
+        changed[140:170, 20:80] = 0
+        update = self.track(tracker, changed)
+        self.assertNotIn(ids[1], tracker.items)
+        self.assertIsNotNone(update['dirty'])
+
+    def test_screenshot_history_is_bounded(self):
+        tracker = Tracker()
+        self.fill(tracker)
+        for _ in range(25):
+            tracker.remember([[0, 0, 1, 1]])
+        self.assertLessEqual(len(tracker.history), 16)
+
 
 if __name__ == '__main__': unittest.main()

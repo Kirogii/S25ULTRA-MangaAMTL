@@ -54,7 +54,7 @@ public final class MainActivity extends Activity {
         });
         panel.addView(source);
         TextView liveHelp = new TextView(this);
-        liveHelp.setText("The floating Live button requests Android screen-capture consent. Select the whole screen. Google Lens sends captured screen regions to Google. Translations move with their content while scrolling; only new or changed sections enter OCR. Partially visible text stays clipped to its scrolling panel. Scrolling and taps pass through. Android requires translucent touch-through overlays, so original lettering may faintly show. Drag the button to move it; tap Stop or use the notification to stop capture.");
+        liveHelp.setText("The floating Live button requests Android screen-capture consent. Select the whole screen. Google Lens sends captured screen regions to Google. Translations move with their content while scrolling. Recent screen snapshots stay in memory, allowing previously seen offscreen text to return without OCR when its image content matches. Unseen content must first scroll into view. Only new or changed sections enter OCR. Partially visible text stays clipped to its scrolling panel. Scrolling and taps pass through. Android requires translucent touch-through overlays, so original lettering may faintly show. Drag the button to move it; tap Stop or use the notification to stop capture.");
         panel.addView(liveHelp);
         live.setOnCheckedChangeListener((button, enabled) -> {
             if (enabled && !android.provider.Settings.canDrawOverlays(this)) {
