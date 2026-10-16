@@ -108,5 +108,13 @@ class TrackingTests(unittest.TestCase):
             tracker.remember([[0, 0, 1, 1]])
         self.assertLessEqual(len(tracker.history), 16)
 
+    def test_clipped_region_uses_panel_motion_instead_of_header(self):
+        tracker = Tracker()
+        self.track(tracker, self.screen(20))
+        tracker.items['edge'] = [.1, 2/360, .4, 42/360]
+        tracker.clips['edge'] = [0, 40/360, 1, 300/360]
+        self.track(tracker, self.screen(40))
+        self.assertNotIn('edge', tracker.items)
+
 
 if __name__ == '__main__': unittest.main()

@@ -186,6 +186,9 @@ class Tracker:
             if previous is not None and previous.shape == current.shape:
                 x1, y1, x2, y2 = [int(v*s) for v, s in zip(box, [width, height, width, height])]
                 x1, y1, x2, y2 = max(0, x1), max(0, y1), min(width, x2), min(height, y2)
+                if clip is not None:
+                    x1, y1 = max(x1, int(clip[0]*width)), max(y1, int(clip[1]*height))
+                    x2, y2 = min(x2, int(clip[2]*width)), min(y2, int(clip[3]*height))
                 if x2 > x1 and y2 > y1 and float((cv2.absdiff(previous[y1:y2, x1:x2], current[y1:y2, x1:x2]) > 15).mean()) < .025:
                     return (0., 0.)
             if not len(points): return (0., 0.)
@@ -196,6 +199,9 @@ class Tracker:
             inside = available[(points[available, 0] >= box[0]*width) & (points[available, 0] <= box[2]*width)
                 & (points[available, 1] >= box[1]*height) & (points[available, 1] <= box[3]*height)]
             cx, cy = np.clip([(box[0]+box[2])/2, (box[1]+box[3])/2], 0, 1)*[width, height]
+            if clip is not None:
+                cx = np.clip(cx, clip[0]*width, clip[2]*width)
+                cy = np.clip(cy, clip[1]*height, clip[3]*height)
             distance = ((points[:, 0]-cx)/(width/4))**2 + ((points[:, 1]-cy)/(height/16))**2
             nearest = inside if len(inside) >= 3 else available[np.argsort(distance[available])[:12]]
             nearest = nearest[distance[nearest] < 4]
@@ -262,7 +268,9 @@ class Tracker:
         for key, box in list(self.items.items()):
             destination, dx, dy = move(box, self.clips.get(key))
             clip = panel_clip(box, dx, dy) or self.clips.get(key, [0, 0, 1, 1])
-            if not visible(destination) or overlap(destination, clip) <= 0 or changed(box, dx, dy, .22, clip):
+            shown_width = min(destination[2], clip[2], 1)-max(destination[0], clip[0], 0)
+            shown_height = min(destination[3], clip[3], 1)-max(destination[1], clip[1], 0)
+            if shown_width*width < 1 or shown_height*height < 1 or changed(box, dx, dy, .22, clip):
                 del self.items[key]; self.clips.pop(key, None); self.overlays.pop(key, None); removed.append(key)
             else:
                 self.items[key] = destination

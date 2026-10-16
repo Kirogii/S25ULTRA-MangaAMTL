@@ -45,13 +45,13 @@ public final class LiveTrackingChecks extends Instrumentation {
                 stable_ms = (time.perf_counter()-started)*100
                 for offset in range(40, 221, 20):
                     tracker.track(screen(offset).tobytes(), 200, 360)
-                assert half not in tracker.items
+                assert half not in tracker.items, ('Offscreen region was not hidden', tracker.items.get(half), tracker.clips.get(half))
                 restored = []
                 for offset in range(200, -1, -20):
                     state = json.loads(tracker.track(screen(offset).tobytes(), 200, 360))
                     restored.extend(item['id'] for item in state['add'])
-                assert half in restored and half in tracker.items
-                assert state['dirty'] is None
+                assert half in restored and half in tracker.items, ('Restore failed', restored, list(tracker.items))
+                assert state['dirty'] is None, ('Restored screen requested OCR', state['dirty'])
                 report = json.dumps(dict(passed=True, stable_track_ms=stable_ms,
                     partial_region_visible=True, bottom_bar_fixed=True, offscreen_restore_without_ocr=True))
                 """, scope);
