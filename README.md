@@ -1,89 +1,27 @@
-<p align="center">
-  <b>Languages  (MTL)</b><br>
-  🇺🇸 <a href="README.md">English</a> |
-  🇨🇳 <a href="README_cn.md">简体中文</a> |
-  🇰🇷 <a href="README_ko.md">한국어</a>
-</p>
-<div align="center">
+# S25ULTRA-MangaAMTL
 
-<img src="https://github.com/Kirogii/MangaAMTL/blob/main/Images/English2.png?raw=true" alt="Preview1" width="45%" />
-<img src="https://github.com/Kirogii/MangaAMTL/blob/main/Images/Raw.png?raw=true" alt="Preview2" width="45%" />
+Manga and live screen translation for Samsung Galaxy S25 Ultra (Android 15+, ARM64). Based on [MangaAMTL](https://github.com/Kirogii/MangaAMTL).
 
-<br>
+## Install
 
-<b>V3.1.0 Translation Showcase</b>
-<i>(Text size is the only issue in typesetting currently)</i>
-# MangaAMTL
-### Note: On First launch this installs multiple gbs of models
-</div>
+1. Download the APK and extension ZIP from [Releases](https://github.com/Kirogii/S25ULTRA-MangaAMTL/releases/latest). Install the APK.
+2. **Shizuku is required for Samsung translation.** [Install Shizuku](https://shizuku.rikka.app/download/), pair and start it through Wireless debugging, then authorize MangaAMTL. Restart Shizuku after reboot.
+3. Install the source-language pack in Samsung Interpreter and select English as its target. Enable Samsung translation in MangaAMTL.
+4. Tap **Start localhost server**. Install the extension ZIP in an Android browser that supports extensions. Set its server to `http://localhost:7860`, select Google Lens OCR, and open a manga page.
+5. For live screen translation, enable the floating button, allow display over other apps, tap **Live**, and approve whole-screen capture. Scroll and tap normally; **Stop** ends capture.
 
-> [!WARNING]
-> Do not run this for production unless you know what you are doing (If you do not know what that is do not portforward this for other people)
+Google Lens uploads detected text crops to Google, with a screen-section fallback when needed. Live mode uses the selected Samsung/Qwen translation method. This release bundles no AI model weights. Download optional OCR, translation and inpainting packs separately; Samsung translation uses installed Samsung language packs. Live background defaults to None; enable Blur for TextPhantom erasure. Translation caching is optional and matches complete text and region context.
 
-## Android / Samsung Galaxy S25 Ultra
+The app checks GitHub for updates once daily when opened. **Check for updates** checks immediately and offers the release download when a newer version exists. Install the new APK over the old version.
 
-This repository includes an Android build for the **Samsung Galaxy S25 Ultra**, with Samsung language-pack translation support in mind. The Android build requires **Shizuku** for Samsung Interpreter language-pack mode. See the [Android localhost server and setup guide](android/README.md) for APK setup, model packs, language packs, Shizuku pairing, and browser-extension use.
+## Build
 
-> [!CAUTION]
-> This is in alpha testing bugs are to be expected if you have a problem make a [Report](https://github.com/Kirogii/MangaAMTL/issues) including data from your console http://localhost:8000/console
+Use JDK 21, Python 3.10, and Android SDK 36. Download `build-inputs.zip` from v1.0.0, verify it with `android/build-inputs.sha256`, and extract it into `android/`. It contains the pinned runtime, font, catalog, and OCR assets. Run:
 
-<div align="center">
-</div>
+```sh
+android/gradlew -p android :app:assembleDebug -PbuildPython=python3.10 -PbundleOcr=false -PbundleInpainting=false -PbundleTranslation=false
+```
 
-<div align="center">
+GitHub Actions builds APK and extension on version tags and publishes them to Releases. The repository signing secret preserves update compatibility. This is a debug-signed sideload build, not a Play Store package.
 
-# Localhost Setup
-Python 3.12 Is Needed for this
-</div>
-
-- Download C++ Buildtools: https://visualstudio.microsoft.com/visual-cpp-build-tools/ <sub>(Make sure to select c++ buildtools)</sub>
-- Download Latest Release: [Latest Version](https://github.com/Kirogii/MangaAMTL/releases/latest)
-- 3: Cd inside
-`cd MangaAMTL`
-- 4: Install dependencies
-`pip install -r requirements.txt` or for cuda `pip install -r cudarequirements.txt`
-- 5: Run the development server
-`python app.py`
-
-` The application will start on:
- http://localhost:8000`
-</div>
-
-<div align="center">
-
-</div>
-
-<div align="center">
-
-
-# Credits
-- https://huggingface.co/Qwen/Qwen3.5-0.8B
-- https://huggingface.co/sharky172/manga-light-colorizer/
-- https://huggingface.co/Kirogii/Yolo-Manga_Textbox-Region_Detect/
-- https://huggingface.co/zai-org/GLM-OCR
-- https://www.soundjay.com/page-flip-sounds-1.html (Sound: Page Flip Sound Effect 2)
-
-# Linux Setup
-### This uses wget not curl
-- Run `apt install wget`
-- Run `wget https://raw.githubusercontent.com/Kirogii/MangaAMTL/refs/heads/main/Ubuntu.sh`
-- Run `chmod +x Ubuntu.sh`
-- Run `./Ubuntu.sh`
-
-### After you've done the setup just run 'Manga' to start the server if theres an update it will prompt you to update by typing 'update'
-</div>
-
-<div align="center">
-
-# Features
-- Multi language translation from source support (Chinese,Korean,Japanese,Russian,Indonesian,English)
-- Model selection (You can install/add new models without much effort GGUF ONLY)
-- Colorizing Support
-  
-</div>
-
-<div align="center">
-
-# Problems
-- Llama-Cpp-Python erroring (ON Cuda version): Install: https://developer.nvidia.com/cuda-downloads (Then rerun the install command from above)
-- Cuda not being set on ocr/ai: `pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu126 `
+See [Android details](android/README.md), [third-party notices](THIRD_PARTY_NOTICES.md), and [upstream](https://github.com/Kirogii/MangaAMTL).
