@@ -12,6 +12,8 @@ Manga and live screen translation for Samsung Galaxy S25 Ultra (Android 15+, ARM
 
 Google Lens uploads detected text crops to Google, with a screen-section fallback when needed. Live mode uses the selected Samsung/Qwen translation method. This release bundles no AI model weights. Download optional OCR, translation and inpainting packs separately; Samsung translation uses installed Samsung language packs. Live background defaults to None; enable Blur for TextPhantom erasure. Translation caching is optional and matches complete text and region context.
 
+On a Galaxy S25 Ultra, the Google Lens plus Samsung Translate cloud-assisted path takes about **1.07 seconds** in the measured warm live benchmark. Actual times vary with network conditions and whether text is cached. **Samsung Translate requires the Samsung Interpreter/Translate app and its installed language packs on the phone; MangaAMTL cannot provide that app.**
+
 The app checks GitHub for updates once daily when opened. **Check for updates** checks immediately and offers the release download when a newer version exists. Install the new APK over the old version.
 
 ## Build
