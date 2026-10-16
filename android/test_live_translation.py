@@ -6,6 +6,7 @@ import sys
 import types
 import unittest
 from PIL import Image, ImageFont
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent / 'app/src/main/python'))
 import live_translation
@@ -33,7 +34,9 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             UploadFile=object, File=lambda *a: None, Form=lambda value: value, HTTPException=HTTPError,
             get_ocr_results=ocr, _current_qwen_path='model-one', _llm_executor=None,
             _qwen_translate_batch_uncached=translate, _current_font_path='C:/Windows/Fonts/arial.ttf',
-            pil_to_cv2=lambda image: image,
+            pil_to_cv2=lambda image: np.asarray(image), cv2_to_pil=Image.fromarray,
+            blur_inpaint=lambda image, mask: image,
+            phantom_text_colors_batch=lambda image, boxes: [((0, 0, 0), (255, 255, 255)) for box in boxes],
             detect_text_colors_batch=lambda image, boxes: [((0, 0, 0), (255, 255, 255)) for box in boxes],
             fit_font_and_wrap=fit,
             get_font=lambda path, size: ImageFont.truetype(path, size))
@@ -67,6 +70,22 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overlay.mode, 'RGBA')
         self.assertEqual(overlay.getpixel((0, 0))[3], 0)
         self.assertEqual(overlay.getpixel((5, 5))[3], 255)
+
+    def test_blur_uses_existing_eraser_and_none_is_transparent(self):
+        calls = []
+        def erase(image, mask):
+            calls.append(mask.copy())
+            result = image.copy(); result[mask > 0] = 123
+            return result
+        module = types.SimpleNamespace(pil_to_cv2=np.asarray, cv2_to_pil=Image.fromarray, blur_inpaint=erase)
+        page = Image.new('RGB', (40, 40), 'white')
+        regions = [dict(bbox=[4, 4, 30, 30], bboxes=[[8, 8, 20, 20]])]
+        blurred = live_translation.background_layer(module, page, regions, 'blur')
+        self.assertEqual(blurred.getpixel((10, 10)), (123, 123, 123, 255))
+        self.assertEqual(blurred.getpixel((5, 5))[3], 0, 'Only detected text subregions should be erased')
+        plain = live_translation.background_layer(module, page, regions, 'none')
+        self.assertEqual(plain.getchannel('A').getextrema(), (0, 0))
+        self.assertEqual(len(calls), 1)
 
     def test_cache_is_bounded(self):
         cache = live_translation.TranslationCache(limit=2)

@@ -82,7 +82,7 @@ def load_app(root, bridge):
     def text_columns(page):
         image = np.asarray(page.convert("RGB"))
         height, width = image.shape[:2]
-        tile_height = max(128, min(height, round(width * 608 / 800)))
+        tile_height = min(height, max(128, round(width * 608 / 800)))
         step = max(1, tile_height - 64)
         starts = list(range(0, max(1, height - tile_height + 1), step))
         if starts[-1] != height - tile_height:
@@ -234,13 +234,31 @@ def load_app(root, bridge):
             module.logging.info("[Android OCR] Uniform page: no text, %.3fs", time.perf_counter() - started)
             return []
         if (mode_override or module._ocr_mode) == "lens":
-            result = await (module._live_google_lens_ocr if live else module.google_lens_ocr)(page, language)
+            if live:
+                import live_ocr
+                def prepare():
+                    yolo = detector(page)
+                    if not (root / 'models/ocr_detector.onnx').is_file():
+                        return page, None, yolo
+                    general = text_columns(page)
+                    packed, slots = live_ocr.pack(page, yolo+general)
+                    return packed, slots, yolo
+                packed, slots, yolo = await asyncio.get_running_loop().run_in_executor(module._OCR_BOX_EXECUTOR, prepare)
+                module.logging.info('[Live OCR] Screen crop %dx%d -> Lens %dx%d, %d text crops',
+                    page.width, page.height, packed.width, packed.height, len(slots or []))
+                raw = await module._live_google_lens_ocr(packed, language)
+                result = android_lens.live_groups(module._group_lens_blocks_by_yolo,
+                    live_ocr.unpack(raw, slots), yolo, page.size)
+            else:
+                result = await module.google_lens_ocr(page, language)
         else:
             result = await asyncio.get_running_loop().run_in_executor(module._OCR_BOX_EXECUTOR, ocr, page, language)
         module.logging.info("[Android OCR] %s: %d regions, %.3fs", mode_override or module._ocr_mode, len(result), time.perf_counter() - started)
         return result
 
     module.get_ocr_results = get_ocr_results
+    module._live_empty_detector = lambda image: []
+    module._live_keep_blocks = lambda blocks: blocks
     module._detect_yolo_text_boxes = detector
     module.get_qwen = lambda: qwen
     module.get_torch_device = lambda: "npu"

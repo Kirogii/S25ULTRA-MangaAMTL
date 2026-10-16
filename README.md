@@ -10,7 +10,7 @@ Manga and live screen translation for Samsung Galaxy S25 Ultra (Android 15+, ARM
 4. Tap **Start localhost server**. Install the extension ZIP in an Android browser that supports extensions. Set its server to `http://localhost:7860`, select Google Lens OCR, and open a manga page.
 5. For live screen translation, enable the floating button, allow display over other apps, tap **Live**, and approve whole-screen capture. Scroll and tap normally; **Stop** ends capture.
 
-Google Lens uploads captured image regions to Google. Samsung translation runs through Samsung Interpreter. This release includes OCR models; optional local translation and inpainting packs are separate. Live mode fills detected text regions without neural inpainting. Translation caching is optional and matches complete text and region context.
+Google Lens uploads detected text crops to Google, with a screen-section fallback when needed. Live mode uses the selected Samsung/Qwen translation method. This release includes OCR models; optional local translation and inpainting packs are separate. Live background defaults to Blur (TextPhantom erasure); switch it off for None. Translation caching is optional and matches complete text and region context.
 
 The app checks GitHub for updates once daily when opened. **Check for updates** checks immediately and offers the release download when a newer version exists. Install the new APK over the old version.
 

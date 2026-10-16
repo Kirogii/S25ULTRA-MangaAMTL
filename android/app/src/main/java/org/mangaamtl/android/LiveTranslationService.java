@@ -75,6 +75,17 @@ public final class LiveTranslationService extends Service {
             foreground(data != null || running);
             if (button == null) createWindows();
             if (data != null) startCapture(intent.getIntExtra("capture_result", Activity.RESULT_CANCELED), data);
+            if (intent != null && "refresh".equals(intent.getAction()) && running) {
+                generation++;
+                if (activeConnection != null) activeConnection.disconnect();
+                capture.post(() -> {
+                    generation++;
+                    tracker = Python.getInstance().getModule("live_tracking").callAttr("Tracker");
+                    ocrBusy = false; retryAfter = 0;
+                });
+                for (Piece piece : rendered.values()) piece.bitmap.recycle();
+                rendered.clear(); overlay.refresh();
+            }
         } catch (Exception error) { fail(error); }
         return START_NOT_STICKY;
     }
@@ -323,11 +334,14 @@ public final class LiveTranslationService extends Service {
                     if (generation != epoch) throw new CancellationException("Capture stopped");
                     JSONObject response = send(encoded.toByteArray(), useCache);
                     android.util.Log.i("MangaAMTLLive", "Region frame: "+response.optInt("regions")+" regions, "
-                        +response.optInt("cache_hits")+" cache hits, "+response.optDouble("seconds")+"s, crop="+actual);
+                        +response.optInt("cache_hits")+" cache hits, backend="+response.optString("translation_backend")
+                        +", OCR="+response.optDouble("ocr_seconds")+"s, translation="+response.optDouble("translation_seconds")
+                        +"s, total="+response.optDouble("seconds")+"s, crop="+actual);
                     capture.post(() -> {
                         if (generation != epoch || !running) { ocrBusy = false; return; }
                         try {
                             JSONObject result = new JSONObject(currentTracker.callAttr("finish", serial, response.toString()).toString());
+                            android.util.Log.i("MangaAMTLLive", "Accepted overlays: "+result.getJSONArray("add").length());
                             main.post(() -> {
                                 if (running && generation == epoch) {
                                     try { apply(result); } catch (Exception error) { fail(error); }
@@ -352,13 +366,14 @@ public final class LiveTranslationService extends Service {
     private JSONObject send(byte[] png, boolean useCache) throws Exception {
         String boundary = "MangaAMTLLiveFrame";
         String language = getSharedPreferences("live", 0).getString("source", "auto");
+        String background = getSharedPreferences("live", 0).getBoolean("blur", true) ? "blur" : "none";
         HttpURLConnection connection = (HttpURLConnection)new URL("http://127.0.0.1:" + ServerService.consolePort + "/v1/live").openConnection();
         activeConnection = connection;
         connection.setRequestMethod("POST"); connection.setConnectTimeout(5000); connection.setReadTimeout(45000);
         connection.setDoOutput(true); connection.setRequestProperty("Content-Type", "multipart/form-data; boundary="+boundary);
         try {
             try (OutputStream output = connection.getOutputStream()) {
-                output.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"cache_enabled\"\r\n\r\n"+useCache+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"ocr_lang\"\r\n\r\n"+language+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"image\"; filename=\"screen.png\"\r\nContent-Type: image/png\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                output.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"cache_enabled\"\r\n\r\n"+useCache+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"ocr_lang\"\r\n\r\n"+language+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"background_mode\"\r\n\r\n"+background+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"image\"; filename=\"screen.png\"\r\nContent-Type: image/png\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 output.write(png); output.write(("\r\n--"+boundary+"--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
             int status = connection.getResponseCode();

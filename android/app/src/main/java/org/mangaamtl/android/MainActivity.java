@@ -41,6 +41,13 @@ public final class MainActivity extends Activity {
         Switch cache = new Switch(this); cache.setText("Cache live translations with matching screen context");
         cache.setChecked(getSharedPreferences("live", 0).getBoolean("cache", true)); panel.addView(cache);
         cache.setOnCheckedChangeListener((button, enabled) -> getSharedPreferences("live", 0).edit().putBoolean("cache", enabled).apply());
+        Switch liveBlur = new Switch(this); liveBlur.setText("Live background: Blur (off = None)");
+        liveBlur.setChecked(getSharedPreferences("live", 0).getBoolean("blur", true)); panel.addView(liveBlur);
+        liveBlur.setOnCheckedChangeListener((button, enabled) -> {
+            getSharedPreferences("live", 0).edit().putBoolean("blur", enabled).apply();
+            if (getSharedPreferences("live", 0).getBoolean("enabled", false))
+                startForegroundService(new Intent(this, LiveTranslationService.class).setAction("refresh"));
+        });
         Spinner source = new Spinner(this);
         String[] sourceCodes = {"auto", "ja", "ko", "zh", "ru", "en"};
         source.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,

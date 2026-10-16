@@ -9,6 +9,12 @@ def add_live_ocr(tree):
     function = copy.deepcopy(next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == 'google_lens_ocr'))
     function.name = '_live_google_lens_ocr'
     for node in ast.walk(function):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'run_in_executor':
+            for argument in node.args:
+                if isinstance(argument, ast.Name) and argument.id == '_detect_yolo_text_boxes':
+                    argument.id = '_live_empty_detector'
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == '_merge_close_blocks':
+            node.func.id = '_live_keep_blocks'
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == '_group_lens_blocks_by_yolo':
             node.func.id = '_live_group_lens_blocks_by_yolo'
     tree.body.append(function)

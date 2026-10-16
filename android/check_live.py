@@ -21,12 +21,16 @@ def main():
     root = Path(__file__).parent
     image = (root.parent / 'Images/Raw.png').read_bytes()
     reports = []
+    samsung = client.get(base+'/v1/samsung/status', timeout=5).json()['enabled']
     for enabled in (True, True, False):
         started = time.perf_counter()
         response = client.post(base+'/v1/live', files={'image': ('screen.png', image, 'image/png')},
-            data={'cache_enabled': str(enabled).lower(), 'ocr_lang': 'ja'}, timeout=60)
+            data={'cache_enabled': str(enabled).lower(), 'ocr_lang': 'ja',
+                  'background_mode': 'blur' if enabled else 'none'}, timeout=60)
         if not response.ok: raise RuntimeError(response.text)
         result = response.json()
+        assert result['translation_backend'] == ('samsung' if samsung else 'qwen'), result
+        assert result['background_mode'] == ('blur' if enabled else 'none'), result
         output = base64.b64decode(result.pop('overlay'))
         items = result.pop('items')
         assert items and all(len(item['bbox']) == 4 and item['overlay'] for item in items)

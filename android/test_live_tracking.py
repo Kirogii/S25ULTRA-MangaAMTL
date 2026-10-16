@@ -116,5 +116,14 @@ class TrackingTests(unittest.TestCase):
         self.track(tracker, self.screen(40))
         self.assertNotIn('edge', tracker.items)
 
+    def test_overlay_reconstruction_noise_does_not_repeat_ocr(self):
+        tracker = Tracker()
+        ids, _ = self.fill(tracker)
+        noisy = self.screen().copy()
+        noisy[140:170:3, 20:80:3] = 255-noisy[140:170:3, 20:80:3]
+        update = self.track(tracker, noisy)
+        self.assertIn(ids[1], tracker.items)
+        self.assertIsNone(update['dirty'])
+
 
 if __name__ == '__main__': unittest.main()

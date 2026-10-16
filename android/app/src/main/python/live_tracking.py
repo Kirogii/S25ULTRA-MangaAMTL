@@ -212,7 +212,9 @@ class Tracker:
             dx, dy = np.median(motions[nearest][coherent], axis=0)/[width, height]
             return float(dx), float(dy)
 
-        def changed(box, dx, dy, threshold, clip=None):
+        stable_regions = []
+
+        def changed(box, dx, dy, threshold, clip=None, ignore_stable=False):
             if previous is None or previous.shape != current.shape: return False
             x1, y1, x2, y2 = [int(v*s) for v, s in zip(box, [width, height, width, height])]
             sx, sy = int(round(dx*width)), int(round(dy*height))
@@ -224,7 +226,14 @@ class Tracker:
             if x2-x1 < 3 or y2-y1 < 3: return False
             a, b = previous[y1:y2, x1:x2], current[y1+sy:y2+sy, x1+sx:x2+sx]
             # Slight reconstruction/compositor quantization is not a menu change.
-            return float((cv2.absdiff(a, b) > 30).mean()) > threshold
+            difference = cv2.absdiff(a, b) > 30
+            if ignore_stable:
+                for region in stable_regions:
+                    left, top, right, bottom = [int(v*s) for v, s in zip(region, [width, height, width, height])]
+                    left, top, right, bottom = max(left, x1), max(top, y1), min(right, x2), min(bottom, y2)
+                    if right > left and bottom > top:
+                        difference[top-y1:bottom-y1, left-x1:right-x1] = False
+            return float(difference.mean()) > threshold
 
         def move(box, clip=None):
             dx, dy = movement(box, clip)
@@ -273,12 +282,13 @@ class Tracker:
             if shown_width*width < 1 or shown_height*height < 1 or changed(box, dx, dy, .22, clip):
                 del self.items[key]; self.clips.pop(key, None); self.overlays.pop(key, None); removed.append(key)
             else:
+                stable_regions.append(box)
                 self.items[key] = destination
                 self.clips[key] = clip
         coverage = []
         for box in self.coverage:
             destination, dx, dy = move(box)
-            if visible(destination) and not changed(box, dx, dy, .008): coverage.append(destination)
+            if visible(destination) and not changed(box, dx, dy, .008, ignore_stable=True): coverage.append(destination)
         self.coverage = coverage
         if self.pending is not None:
             for cell in self.pending['cells']:
