@@ -23,6 +23,12 @@ class UpstreamRenderingTests(unittest.TestCase):
         source = (Path(__file__).parent.parent / 'app.py').read_text(encoding='utf-8')
         functions = {node.name: ast.get_source_segment(source, node) for node in ast.parse(source).body
                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        # Blur intentionally changes color dispatch and mask preparation only.
+        functions['_render_translated_image'] = functions['_render_translated_image'].replace(
+            'all_box_colors = (phantom_text_colors_batch if _inpaint_mode == "blur" else detect_text_colors_batch)(orig_bgr, all_bboxes_for_color)',
+            'all_box_colors = detect_text_colors_batch(orig_bgr, all_bboxes_for_color)').replace(
+            'mask_dilate_kernel = 1 if inpaint_mode == "blur" else 3', 'mask_dilate_kernel = 3').replace(
+            'if ocr_mode == "local_vision" and inpaint_mode != "blur":', 'if ocr_mode == "local_vision":')
         for name, expected in EXPECTED.items():
             with self.subTest(method=name):
                 self.assertEqual(hashlib.sha256(functions[name].encode()).hexdigest(), expected)

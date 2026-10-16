@@ -72,6 +72,39 @@ class FontTests(unittest.TestCase):
 
 
 class RenderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_status_wait_wakes_on_completion_and_failure_without_restarting_job(self):
+        ready = asyncio.Event()
+        calls = []
+        async def process(job_id):
+            calls.append(job_id)
+            await ready.wait()
+            module._jobs[job_id]['status'] = 'completed'
+            if job_id == 'failure':
+                raise ValueError('Translation failed')
+        module = types.SimpleNamespace(_jobs={'sample': {'status': 'pending'}, 'failure': {'status': 'pending'}}, _process_job=process)
+        android_render.install_status_wait(module)
+        for job_id in module._jobs:
+            ready.clear()
+            worker = asyncio.create_task(module._process_job(job_id))
+            waiter = asyncio.create_task(android_render.wait_status(module, job_id))
+            await asyncio.sleep(0)
+            self.assertFalse(waiter.done())
+            ready.set()
+            await asyncio.wait_for(waiter, timeout=.2)
+            if job_id == 'failure':
+                with self.assertRaises(ValueError): await worker
+            else:
+                await worker
+            self.assertTrue(module._jobs[job_id]['android_status_event'].is_set())
+        self.assertEqual(calls, ['sample', 'failure'])
+        await android_render.wait_status(module, 'missing')
+
+    async def test_status_wait_timeout_preserves_active_job(self):
+        module = types.SimpleNamespace(_jobs={'sample': {'status': 'processing'}})
+        await android_render.wait_status(module, 'sample')
+        self.assertEqual(module._jobs['sample']['status'], 'processing')
+        self.assertFalse(module._jobs['sample']['android_status_event'].is_set())
+
     async def test_history_bounds_release_delivered_images_and_preserve_live_jobs(self):
         from PIL import Image
         pages = [Image.new('RGB', (10, 10)) for _ in range(10)]

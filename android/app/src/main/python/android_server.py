@@ -23,6 +23,7 @@ def load_app(root, bridge):
     tree = ast.parse(source)
     import android_lens
     android_lens.offload_detector(tree)
+    android_lens.add_live_ocr(tree)
     # PyTorch cannot run on Android's HTP; all learned operators go through Java/QNN.
     tree.body = [node for node in tree.body if not (
         isinstance(node, ast.Import) and any(alias.name == "torch" for alias in node.names))]
@@ -31,6 +32,14 @@ def load_app(root, bridge):
     import sys
     sys.modules[module.__name__] = module
     exec(compile(tree, module.__file__, "exec"), module.__dict__)
+    import android_text
+    android_text.install(module)
+    import android_render
+    android_render.install_status_wait(module)
+    android_render.install_image_cache(module)
+    android_lens.install_http_timing(module)
+    module._live_group_lens_blocks_by_yolo = lambda blocks, boxes, size: android_lens.live_groups(
+        module._group_lens_blocks_by_yolo, blocks, boxes, size)
 
     def infer(name, image, mask=None):
         image = np.ascontiguousarray(image, dtype="<f4")
@@ -63,6 +72,8 @@ def load_app(root, bridge):
     async def inpaint(image, mask, use_lama=True):
         if module._inpaint_mode == "none":
             return image
+        if module._inpaint_mode == "blur":
+            return await asyncio.get_running_loop().run_in_executor(module._inpaint_executor, module.blur_inpaint, image, mask)
         # Retain the original crop, tiling, color correction and blending methods.
         def run():
             result = lama(module.cv2_to_pil(image), Image.fromarray(mask))
@@ -72,7 +83,7 @@ def load_app(root, bridge):
     def text_columns(page):
         image = np.asarray(page.convert("RGB"))
         height, width = image.shape[:2]
-        tile_height = max(128, min(height, round(width * 608 / 800)))
+        tile_height = min(height, max(128, round(width * 608 / 800)))
         step = max(1, tile_height - 64)
         starts = list(range(0, max(1, height - tile_height + 1), step))
         if starts[-1] != height - tile_height:
@@ -217,20 +228,57 @@ def load_app(root, bridge):
                 regions.append({"bbox": box, "bboxes": [box], "text": text})
         return regions
 
-    async def get_ocr_results(page, language="ja", mode_override=None):
+    import live_ocr
+    image_ocr_cache, crop_ocr_cache = live_ocr.OcrCache(), live_ocr.OcrCache()
+
+    async def get_ocr_results(page, language="ja", mode_override=None, live=False, use_cache=True):
         started = time.perf_counter()
+        mode = mode_override or module._ocr_mode
+        key = image_ocr_cache.key(page, language, (mode, live)) if use_cache else None
+        if not use_cache:
+            image_ocr_cache.clear(); crop_ocr_cache.clear()
+        cached = image_ocr_cache.get(key) if use_cache else None
+        if cached is not None:
+            module.logging.info('[OCR cache] Exact image hit: %d regions, %.3fs', len(cached), time.perf_counter()-started)
+            return cached
         # A completely uniform page contains no visible lettering; avoid a cloud round trip.
         if all(low == high for low, high in page.convert("RGB").getextrema()):
             module.logging.info("[Android OCR] Uniform page: no text, %.3fs", time.perf_counter() - started)
             return []
-        if (mode_override or module._ocr_mode) == "lens":
-            result = await module.google_lens_ocr(page, language)
+        if mode == "lens":
+            def prepare():
+                yolo = detector(page)
+                if live and not (root / 'models/ocr_detector.onnx').is_file():
+                    return page, None, yolo
+                general = text_columns(page) if live else []
+                packed, slots = live_ocr.pack(page, yolo+general)
+                return packed, slots, yolo
+            packed, slots, yolo = await asyncio.get_running_loop().run_in_executor(module._OCR_BOX_EXECUTOR, prepare)
+            module.logging.info('[Lens crops] live=%s: %dx%d -> %dx%d, %d text crops',
+                live, page.width, page.height, packed.width, packed.height, len(slots or []))
+            crop_key = crop_ocr_cache.key(packed, language, live) if use_cache else None
+            raw = crop_ocr_cache.get(crop_key) if use_cache else None
+            if raw is None:
+                raw = await module._live_google_lens_ocr(packed, language)
+                if use_cache: crop_ocr_cache.put(crop_key, raw)
+            else:
+                module.logging.info('[OCR cache] Exact text crops hit: %d blocks', len(raw))
+            raw = live_ocr.unpack(raw, slots)
+            if live:
+                result = android_lens.live_groups(module._group_lens_blocks_by_yolo, raw, yolo, page.size)
+            elif yolo:
+                result = module._group_lens_blocks_by_yolo(raw, yolo, page.size)
+            else:
+                result = module._merge_close_blocks(raw)
         else:
             result = await asyncio.get_running_loop().run_in_executor(module._OCR_BOX_EXECUTOR, ocr, page, language)
+        if use_cache: image_ocr_cache.put(key, result)
         module.logging.info("[Android OCR] %s: %d regions, %.3fs", mode_override or module._ocr_mode, len(result), time.perf_counter() - started)
         return result
 
     module.get_ocr_results = get_ocr_results
+    module._live_empty_detector = lambda image: []
+    module._live_keep_blocks = lambda blocks: blocks
     module._detect_yolo_text_boxes = detector
     module.get_qwen = lambda: qwen
     module.get_torch_device = lambda: "npu"
@@ -246,7 +294,7 @@ def load_app(root, bridge):
     module.LAMA_LARGE_PATH = root / "models/lama_dilated.onnx"
     module._cloud_mode = False
     module._current_model_type = "local"
-    module._inpaint_mode = "none" if module._inpaint_mode == "none" else "high"
+    module._inpaint_mode = module._inpaint_mode if module._inpaint_mode in {"none", "blur"} else "high"
     if module._ocr_mode not in {"hayai", "glm", "lens"}:
         module._ocr_mode = "hayai"
 
@@ -254,11 +302,9 @@ def load_app(root, bridge):
     async def npu_only(request, call_next):
         parts = request.url.path.split("/")
         if request.method == "POST" and request.url.path == "/v1/translate":
-            import android_render
             android_render.prune(module)
         if (request.method == "POST" and request.headers.get("prefer") == "respond-async"
                 and len(parts) == 5 and parts[1:3] == ["v1", "translate"] and parts[4] == "image"):
-            import android_render
             return await android_render.image(module, parts[3])
         if request.method == "GET" and request.url.path == "/GetOcrMode":
             result = await module.get_ocr_mode()
@@ -284,7 +330,14 @@ def load_app(root, bridge):
                            or request.url.path == "/SetOcrMode" and settings.get("mode") not in {"hayai", "glm", "lens"})
             if unsupported:
                 return module.JSONResponse({"detail": "Select local NPU translation and Hayai, GLM or Google Lens OCR. Find compatible translation models at /models."}, status_code=400)
+        wait_for_status = (request.method == "GET" and len(parts) == 4
+                           and parts[1:3] == ["v1", "translate"]
+                           and request.query_params.get("wait") == "0.5")
+        if wait_for_status:
+            await android_render.wait_status(module, parts[3])
         response = await call_next(request)
+        if wait_for_status:
+            response.headers["X-MangaAMTL-Wait"] = "1"
         if request.method == "POST" and len(parts) == 5 and parts[1:3] == ["v1", "translate"] and parts[4] == "image" and response.status_code == 200:
             job = module._jobs.get(parts[3])
             if job is not None: job['android_image_delivered'] = True
@@ -294,6 +347,8 @@ def load_app(root, bridge):
     module.android_finder = model_finder.install(module, root, bridge)
     import samsung_translation
     samsung_translation.install(module, bridge)
+    import live_translation
+    live_translation.install(module, bridge)
     return module
 
 

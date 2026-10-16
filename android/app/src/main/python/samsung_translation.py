@@ -5,17 +5,24 @@ import time
 
 def install(module, bridge):
     original_single, original_batch = module.qwen_translate, module.qwen_translate_batch
+    module._qwen_translate_batch_uncached = original_batch
 
     cache = OrderedDict()
+    def key(text):
+        return ' '.join(text.split())
+
     def remember(text, result):
+        text = key(text)
         cache[text] = result
         cache.move_to_end(text)
         while len(cache) > 512: cache.popitem(last=False)
 
     def samsung(text):
-        if text in cache:
-            cache.move_to_end(text)
-            return cache[text]
+        identity = key(text)
+        if identity in cache:
+            cache.move_to_end(identity)
+            result = cache[identity]
+            return text if key(result) == identity else result
         started = time.perf_counter()
         result = str(bridge.samsungTranslate(text))
         remember(text, result)
@@ -44,8 +51,8 @@ def install(module, bridge):
             return original_batch(texts, target_lang, ocr_lang, context_aware, name_map, llm)
         bridge.samsungBeginBatch()
         try:
-            missing = list(dict.fromkeys(text.strip() for text in texts
-                if text.strip() not in cache and any(character.isalpha() for character in text)))
+            missing = list({key(text): text.strip() for text in texts
+                if key(text) not in cache and any(character.isalpha() for character in text)}.values())
             joined = '\n\n'.join(f'<<<{index:03d}>>>\n{text}' for index, text in enumerate(missing))
             if 1 < len(missing) < 1000 and len(joined) <= 4000 and all('<<<' not in text and '>>>' not in text for text in missing):
                 try:

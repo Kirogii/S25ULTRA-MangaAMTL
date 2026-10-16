@@ -234,10 +234,12 @@ async function syncInpaintModeFromServer(serverUrl) {
   try {
     const res = await fetch(`${serverUrl}/GetInpaintMode`);
     const data = await res.json();
-    const mode = data.inpaint_mode === 'none' ? 'none' : 'high';
+    const mode = ['blur', 'none', 'high'].includes(data.inpaint_mode) ? data.inpaint_mode : 'blur';
     document.getElementById('optInpaintMode').value = mode;
     chrome.storage.local.set({ inpaintMode: mode });
-    if (data.inpaint_mode === 'high') {
+    if (data.inpaint_mode === 'blur') {
+        statusEl.textContent = 'Blur — soft erasure, no model';
+      } else if (data.inpaint_mode === 'high') {
       statusEl.innerText = data.high_model_downloaded ? `High model ready (${data.high_model_size_mb} MB)` : 'High model will download on first use';
     } else if (data.inpaint_mode === 'none') {
       statusEl.innerText = 'None mode active (no model loaded)';
@@ -264,7 +266,9 @@ async function pushInpaintMode(serverUrl, mode) {
     });
     const data = await res.json();
     if (res.ok) {
-      if (data.inpaint_mode === 'high') {
+      if (data.inpaint_mode === 'blur') {
+        statusEl.textContent = 'Blur — soft erasure, no model';
+      } else if (data.inpaint_mode === 'high') {
         statusEl.innerText = `High model ready (${data.high_model_size_mb} MB)`;
       } else if (data.inpaint_mode === 'none') {
         statusEl.innerText = 'None mode active (no model loaded)';
@@ -652,8 +656,8 @@ document.getElementById('refreshModelsBtn').addEventListener('click', async () =
               document.getElementById('modelStatus').innerText = `Active: ${data.repo_id}/${data.filename}`;
               document.getElementById('optModelType').value = 'local';
               document.getElementById('optOpenrouterRow').style.display = 'none';
-              document.getElementById('optInpaintMode').value = 'high';
-              chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'high' });
+              document.getElementById('optInpaintMode').value = 'blur';
+              chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'blur' });
             } else {
               document.getElementById('modelStatus').innerHTML = `<span class="error">Error: ${data.detail}</span>`;
             }

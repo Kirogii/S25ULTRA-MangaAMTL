@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Manga Translator — Android NPU",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "Galaxy S25 Ultra localhost manga translation with Samsung language packs or Qwen NPU models.",
   "permissions": [
     "storage",

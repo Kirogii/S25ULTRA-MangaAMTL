@@ -181,11 +181,12 @@
   <div class="card">
     <h3>Inpainting Mode</h3>
     <select id="optInpaintMode">
-      <option value="low">Low (faster, default)</option>
+      <option value="blur">Blur (default, soft erasure, no model)</option>
+      <option value="low">Low (faster)</option>
       <option value="high">High (better quality, bigger model)</option>
       <option value="none">None (fill with bg color, no model)</option>
     </select>
-    <div class="hint">LaMa uses the phone's NPU. 'None' fills text regions with the detected background color.</div>
+    <div class="hint">Blur uses fast TextPhantom erasure without a model. LaMa uses the phone's NPU. 'None' fills text regions with the detected background color.</div>
     <div id="optInpaintStatus" class="status"></div>
   </div>
 

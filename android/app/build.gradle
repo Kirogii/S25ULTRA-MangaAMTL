@@ -6,7 +6,7 @@ plugins {
 chaquopy {
     defaultConfig {
         version '3.10'
-        buildPython '../../.android-tools/python/cpython-3.10.22-windows-x86_64-none/python.exe'
+        buildPython providers.gradleProperty('buildPython').orElse('../../.android-tools/python/cpython-3.10.22-windows-x86_64-none/python.exe').get()
         pip {
             install 'numpy==1.26.2'
             install 'opencv-python==4.5.1.48'
@@ -29,8 +29,9 @@ android {
         applicationId 'org.mangaamtl.android'
         minSdk 35
         targetSdk 36
-        versionCode 4
-        versionName '0.4-s25-pipeline-npu'
+        versionName providers.gradleProperty('releaseVersion').orElse('1.0.0').get()
+        def versionParts = versionName.split('\\.').collect { it.toInteger() }
+        versionCode versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
         buildConfigField 'boolean', 'BUNDLED_OCR', providers.gradleProperty('bundleOcr').orElse('false').get().toBoolean().toString()
         buildConfigField 'boolean', 'BUNDLED_INPAINTING', providers.gradleProperty('bundleInpainting').orElse('false').get().toBoolean().toString()
         buildConfigField 'boolean', 'BUNDLED_TRANSLATION', providers.gradleProperty('bundleTranslation').orElse('false').get().toBoolean().toString()

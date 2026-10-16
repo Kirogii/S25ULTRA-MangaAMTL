@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--blank', action='store_true')
     parser.add_argument('--async-render', action='store_true')
+    parser.add_argument('--wait-status', action='store_true')
     args = parser.parse_args()
     client = requests.Session()
     client.trust_env = False
@@ -37,16 +38,20 @@ def main():
         job = submitted['job_id']
         submitted_at = time.perf_counter()
         deadline = started + 180
+        status_requests = 0
         while True:
             request('POST', '/v1/health', json={'job_id': job, 'active': True})
-            report = request('GET', '/v1/translate/' + job).json()
+            status_response = request('GET', '/v1/translate/' + job + ('?wait=0.5' if args.wait_status else ''))
+            status_requests += 1
+            report = status_response.json()
             if report['status'] in {'failed', 'cancelled'}:
                 raise RuntimeError(report)
             if report['status'] == 'completed':
                 break
             if time.perf_counter() > deadline:
                 raise TimeoutError(report)
-            time.sleep(.1)
+            if status_response.headers.get('X-MangaAMTL-Wait') != '1':
+                time.sleep(.1)
         translated_at = time.perf_counter()
         headers = {'Prefer': 'respond-async'} if args.async_render else {}
         while True:
@@ -58,7 +63,8 @@ def main():
         ended = time.perf_counter()
         result = dict(iteration=iteration, job=job, submit_seconds=submitted_at-started,
                       translate_seconds=translated_at-submitted_at, render_seconds=ended-translated_at,
-                      total_seconds=ended-started, regions=len(report['result'].get('translations', [])))
+                      total_seconds=ended-started, regions=len(report['result'].get('translations', [])),
+                      status_requests=status_requests, wait_status=args.wait_status)
         print(json.dumps(result), flush=True)
         reports.append(result)
         folder = Path(__file__).parent / 'evidence/speed'

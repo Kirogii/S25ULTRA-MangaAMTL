@@ -22,6 +22,9 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        android.content.SharedPreferences liveSettings = getSharedPreferences("live",0);
+        if (!liveSettings.getBoolean("none_default_v1",false))
+            liveSettings.edit().putBoolean("blur",false).putBoolean("none_default_v1",true).apply();
         LinearLayout panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL);
         int pad = (int)(24 * getResources().getDisplayMetrics().density);
         panel.setPadding(pad, pad * 2, pad, pad);
@@ -33,6 +36,50 @@ public final class MainActivity extends Activity {
         Button stop = new Button(this); stop.setText("Stop server"); panel.addView(stop);
         Button console = new Button(this); console.setText("Open server console"); panel.addView(console);
         Button models = new Button(this); models.setText("Find and download NPU models"); panel.addView(models);
+        Button updates = new Button(this); updates.setText("Check for updates · " + BuildConfig.VERSION_NAME); panel.addView(updates);
+        updates.setOnClickListener(view -> AppUpdates.check(this, true));
+        AppUpdates.check(this, false);
+        Switch live = new Switch(this); live.setText("Live screen translation · floating button");
+        live.setChecked(getSharedPreferences("live", 0).getBoolean("enabled", false)); panel.addView(live);
+        Switch cache = new Switch(this); cache.setText("Cache live translations with matching screen context");
+        cache.setChecked(getSharedPreferences("live", 0).getBoolean("cache", true)); panel.addView(cache);
+        cache.setOnCheckedChangeListener((button, enabled) -> getSharedPreferences("live", 0).edit().putBoolean("cache", enabled).apply());
+        Switch liveBlur = new Switch(this); liveBlur.setText("Live background: Blur (off = None, translucent box)");
+        liveBlur.setChecked(getSharedPreferences("live", 0).getBoolean("blur", false)); panel.addView(liveBlur);
+        liveBlur.setOnCheckedChangeListener((button, enabled) -> {
+            getSharedPreferences("live", 0).edit().putBoolean("blur", enabled).apply();
+            if (getSharedPreferences("live", 0).getBoolean("enabled", false))
+                startForegroundService(new Intent(this, LiveTranslationService.class).setAction("refresh"));
+        });
+        Spinner source = new Spinner(this);
+        String[] sourceCodes = {"auto", "ja", "ko", "zh", "ru", "en"};
+        source.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+            new String[]{"Live source: Auto (Google Lens)", "Live source: Japanese", "Live source: Korean", "Live source: Chinese", "Live source: Russian", "Live source: English"}));
+        source.setSelection(Math.max(0, java.util.Arrays.asList(sourceCodes).indexOf(getSharedPreferences("live", 0).getString("source", "auto"))));
+        source.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, android.view.View view, int position, long id) {
+                getSharedPreferences("live", 0).edit().putString("source", sourceCodes[position]).apply();
+            }
+            public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        panel.addView(source);
+        TextView liveHelp = new TextView(this);
+        liveHelp.setText("The floating Live button requests Android screen-capture consent. Select the whole screen. Google Lens sends captured screen regions to Google. Translations move with their content while scrolling. Recent screen snapshots stay in memory, allowing previously seen offscreen text to return without OCR when its image content matches. Unseen content must first scroll into view. Only new or changed sections enter OCR. Partially visible text stays clipped to its scrolling panel. Scrolling and taps pass through. Android requires translucent touch-through overlays, so original lettering may faintly show. Drag the button to move it; tap Stop or use the notification to stop capture.");
+        panel.addView(liveHelp);
+        live.setOnCheckedChangeListener((button, enabled) -> {
+            if (enabled && !android.provider.Settings.canDrawOverlays(this)) {
+                live.setChecked(false);
+                startActivityForResult(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())), 10);
+                return;
+            }
+            getSharedPreferences("live", 0).edit().putBoolean("enabled", enabled).apply();
+            if (enabled) {
+                startForegroundService(new Intent(this, ServerService.class));
+                startForegroundService(new Intent(this, LiveTranslationService.class));
+            } else {
+                stopService(new Intent(this, LiveTranslationService.class));
+            }
+        });
         String[] categories = {"ocr", "inpainting", "translation"};
         for (int i = 0; i < categories.length; i++) {
             final int request = i + 2;
@@ -85,9 +132,45 @@ public final class MainActivity extends Activity {
         importFont.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 1));
         if (getIntent().getBooleanExtra("start_server", false)) startForegroundService(new Intent(this, ServerService.class));
+        if (getSharedPreferences("live", 0).getBoolean("enabled", false) && android.provider.Settings.canDrawOverlays(this)) {
+            startForegroundService(new Intent(this, ServerService.class));
+            startForegroundService(new Intent(this, LiveTranslationService.class));
+        }
+        if (getIntent().getBooleanExtra("live_capture", false)) requestLiveCapture();
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent); setIntent(intent);
+        if (intent.getBooleanExtra("live_capture", false)) requestLiveCapture();
+    }
+    private void requestLiveCapture() {
+        if (!android.provider.Settings.canDrawOverlays(this)) return;
+        new android.app.AlertDialog.Builder(this).setTitle("Live screen translation")
+            .setMessage("Only start on content you want translated. In Google Lens mode, captured screen images are uploaded to Google. Android asks for screen capture consent next. Stop capture using the floating button or notification.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Continue", (dialog, which) -> {
+                android.media.projection.MediaProjectionManager manager = getSystemService(android.media.projection.MediaProjectionManager.class);
+                startActivityForResult(manager.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()), 11);
+            }).show();
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == 10) {
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                getSharedPreferences("live", 0).edit().putBoolean("enabled", true).apply();
+                startForegroundService(new Intent(this, ServerService.class));
+                startForegroundService(new Intent(this, LiveTranslationService.class));
+                recreate();
+            }
+            return;
+        }
+        if (request == 11) {
+            if (result == RESULT_OK && data != null) {
+                startForegroundService(new Intent(this, ServerService.class));
+                startForegroundService(new Intent(this, LiveTranslationService.class)
+                    .putExtra("capture_result", result).putExtra("capture_data", data));
+                moveTaskToBack(true);
+            }
+            return;
+        }
         if (request >= 2 && request <= 4 && result == RESULT_OK && data != null && data.getData() != null) {
             if (ServerService.active || installingPack) return;
             installingPack = true;

@@ -9,3 +9,8 @@ android/dist/
 android/tools/
 **/__pycache__/
 Extension/Extension.zip
+.publish/
+weppy-project-sync/
+models/
+*.keystore
+*.jks

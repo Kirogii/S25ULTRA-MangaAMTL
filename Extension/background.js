@@ -19,7 +19,7 @@ const androidReady = (async () => {
     serverUrl: !saved.serverUrl || oldLoopback ? 'http://localhost:7860' : saved.serverUrl,
     modelType: 'local', cloudMode: false, colorize: false, freeOpenRouter: false,
     ocrMode: ['hayai', 'glm', 'lens'].includes(saved.ocrMode) ? saved.ocrMode : 'lens',
-    inpaintMode: saved.inpaintMode === 'none' ? 'none' : 'high', contextLevel: 'low',
+    inpaintMode: ['blur', 'none', 'high'].includes(saved.inpaintMode) ? saved.inpaintMode : 'blur', contextLevel: 'low',
     ocrLang: saved.ocrLang || 'ja', targetLang: saved.targetLang || 'en',
     combineAmount: saved.combineAmount || '1', androidProfileVersion: 1,
   });

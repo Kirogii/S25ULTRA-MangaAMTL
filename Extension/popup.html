@@ -239,11 +239,12 @@
 
     <label for="inpaintMode"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m15 5 4 4"/><path d="M13 7 8.7 2.7a2.4 2.4 0 0 0-3.4 0L2.7 5.3a2.4 2.4 0 0 0 0 3.4L7 13"/><path d="m8 6 2-2"/><path d="M18 12h.01"/><path d="M18 21a3 3 0 0 0 3-3c0-1.5-1-3-3-5-2 2-3 3.5-3 5a3 3 0 0 0 3 3z"/><path d="M11 15 6 20a2.83 2.83 0 0 1-4-4l5-5"/></svg>Inpainting Mode</label>
     <select id="inpaintMode">
-      <option value="low">Low (faster, default)</option>
+      <option value="blur">Blur (default, soft erasure, no model)</option>
+      <option value="low">Low (faster)</option>
       <option value="high">High (better quality, bigger model)</option>
       <option value="none">None (fill with bg color, no model)</option>
     </select>
-    <div class="hint">LaMa uses the phone's NPU. 'None' fills text regions with the detected background color.</div>
+    <div class="hint">Blur uses fast TextPhantom erasure without a model. LaMa uses the phone's NPU. 'None' fills text regions with the detected background color.</div>
     <div id="inpaintModeStatus" class="status"></div>
 
     <div class="section-title"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7.5"/><path d="M12 2a3 3 0 0 1 3 3v.5"/><path d="M9 12.5A3 3 0 1 0 6 17a3 3 0 0 0 3 1"/><path d="M15 6a3 3 0 1 1 3 5"/><path d="M9 18a3 3 0 0 0 6 0v-6"/><path d="M18 11a3 3 0 1 1-3 5"/></svg>Translation Model</div>

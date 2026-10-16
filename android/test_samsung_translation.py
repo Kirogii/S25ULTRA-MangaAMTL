@@ -62,6 +62,7 @@ class SamsungTranslationTest(unittest.TestCase):
         self.assertEqual(module.qwen_translate("こんにちは"), "hello")
         self.assertEqual(calls, ["こんにちは"])
         self.assertEqual(module.qwen_translate("English only"), "")
+        self.assertEqual(module.qwen_translate("English\n  only"), "")
         self.assertEqual(module.qwen_translate("123!?"), "")
         self.assertEqual(len(calls), 2)
 

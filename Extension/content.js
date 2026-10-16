@@ -185,10 +185,12 @@
       const res = await fetch(`${serverUrl}/GetInpaintMode`);
       const data = await res.json();
       const el = document.getElementById('mtInpaintMode');
-      if (el) el.value = data.inpaint_mode || 'low';
-      chrome.storage.local.set({ inpaintMode: data.inpaint_mode || 'low' });
+      if (el) el.value = data.inpaint_mode || 'blur';
+      chrome.storage.local.set({ inpaintMode: data.inpaint_mode || 'blur' });
       if (statusEl) {
-        if (data.inpaint_mode === 'high') {
+        if (data.inpaint_mode === 'blur') {
+        statusEl.textContent = 'Blur — soft erasure, no model';
+      } else if (data.inpaint_mode === 'high') {
           statusEl.innerText = data.high_model_downloaded
             ? `High model ready (${data.high_model_size_mb} MB)`
             : 'High model will download on first use';
@@ -219,7 +221,9 @@
       const data = await res.json();
       if (res.ok) {
         if (statusEl) {
-          if (data.inpaint_mode === 'high') {
+          if (data.inpaint_mode === 'blur') {
+        statusEl.textContent = 'Blur — soft erasure, no model';
+      } else if (data.inpaint_mode === 'high') {
             statusEl.innerText = `High model ready (${data.high_model_size_mb} MB)`;
           } else if (data.inpaint_mode === 'none') {
             statusEl.innerText = 'None mode active (no model loaded)';
@@ -453,7 +457,7 @@
 
     // ★ Inpaint mode — 1:1 with popup.js
     const inpaintEl = document.getElementById('mtInpaintMode');
-    if (inpaintEl) inpaintEl.value = data.inpaintMode || 'low';
+    if (inpaintEl) inpaintEl.value = data.inpaintMode || 'blur';
 
     // ★ OCR mode — 1:1 with popup.js
     const ocrModeSel = document.getElementById('mtOcrModeSelect');
@@ -688,7 +692,7 @@
         if (stored.openrouterApiKey) payload.openrouter_api_key = stored.openrouterApiKey;
       } else {
         payload.ocr_mode = stored.ocrMode || 'hayai';
-        payload.inpaint_mode = stored.inpaintMode || 'low';
+        payload.inpaint_mode = stored.inpaintMode || 'blur';
         payload.model_type = stored.modelType || 'local';
         if (payload.ocr_mode === 'openai_endpoint') {
           payload.openai_ocr_endpoint = stored.openaiOcrEndpoint || 'https://api.openai.com/v1';
@@ -887,8 +891,8 @@
                   if (modelType) modelType.value = 'local';
                   if (cloudMode) cloudMode.checked = false;
                   const inpaintMode = document.getElementById('mtInpaintMode');
-                  if (inpaintMode) inpaintMode.value = 'low';
-                  chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'low' });
+                  if (inpaintMode) inpaintMode.value = 'blur';
+                  chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'blur' });
                 } else {
                   modal.querySelector('#mtModelInstallStatus').innerHTML = `<span style="color:#ff4d4d;">Error: ${data.detail}</span>`;
                 }
@@ -925,8 +929,8 @@
           if (modelType) modelType.value = 'local';
           if (cloudMode) cloudMode.checked = false;
           const inpaintMode = document.getElementById('mtInpaintMode');
-          if (inpaintMode) inpaintMode.value = 'low';
-          chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'low' });
+          if (inpaintMode) inpaintMode.value = 'blur';
+          chrome.storage.local.set({ modelType: 'local', cloudMode: false, inpaintMode: 'blur' });
           modal.querySelector('#mtRefreshModelsBtn').click();
         } else {
           modal.querySelector('#mtModelInstallStatus').innerHTML = `<span style="color:#ff4d4d;">Error: ${data.detail}</span>`;
@@ -1463,7 +1467,7 @@
     console.log(`[MangaTranslator] Polling backend job ${jobId} from the page.`);
     try {
       while (Date.now() < deadline) {
-        const statusResponse = await fetch(`${serverUrl}/v1/translate/${jobId}`);
+        const statusResponse = await fetch(`${serverUrl}/v1/translate/${jobId}?wait=0.5`);
         const status = await statusResponse.json().catch(() => ({}));
         if (!statusResponse.ok) {
           throw new Error(`Job ${jobId} poll failed: HTTP ${statusResponse.status}: ${status.detail || JSON.stringify(status)}`);
@@ -1492,7 +1496,9 @@
             image_bytes: blob.size,
           };
         }
-        await new Promise(resolve => setTimeout(resolve, 100));
+        if (statusResponse.headers.get('X-MangaAMTL-Wait') !== '1') {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
       throw new Error(`Backend job ${jobId} timed out after 15 minutes`);
     } catch (error) {
